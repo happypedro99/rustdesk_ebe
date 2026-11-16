@@ -8,7 +8,8 @@ name: Update webpki-roots
 #
 # Note: PRs created with the default GITHUB_TOKEN do not trigger other
 # workflows (GitHub limitation). Close and reopen the PR, or push to its
-# branch, to run CI on it.
+# branch, to run CI on it. Automatic PR creation also requires the repository
+# Actions setting "Allow GitHub Actions to create and approve pull requests".
 
 on:
   schedule:
@@ -68,8 +69,17 @@ jobs:
           git add -- '*Cargo.lock'
           git commit -m "chore: update webpki-roots to latest Mozilla root store"
           git push -f origin "$BRANCH"
-          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
-            gh pr create \
+          existing_pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')
+          if [ -z "$existing_pr" ]; then
+            if output=$(gh pr create \
               --title "chore: update webpki-roots to latest Mozilla root store" \
-              --body "Automated weekly refresh of the compiled-in TLS root certificates (webpki-roots). Please review the added/removed roots. CI does not run automatically on PRs created by GITHUB_TOKEN; close and reopen this PR to trigger it."
+              --body "Automated weekly refresh of the compiled-in TLS root certificates (webpki-roots). Please review the added/removed roots. CI does not run automatically on PRs created by GITHUB_TOKEN; close and reopen this PR to trigger it." 2>&1); then
+              echo "$output"
+            elif [[ "$output" == *"GitHub Actions is not permitted to create or approve pull requests"* ]]; then
+              echo "::warning::GitHub Actions cannot create pull requests. Enable the repository Actions setting or open the update branch manually."
+              echo "Open the [webpki-roots update pull request]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$BRANCH?expand=1) manually, or enable 'Allow GitHub Actions to create and approve pull requests' in the repository Actions settings." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "$output" >&2
+              exit 1
+            fi
           fi
